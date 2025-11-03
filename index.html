@@ -353,7 +353,9 @@
     const wordCount = document.getElementById("wordCount");
 
     const API_KEY = "4cf2ed88b3d39e9f196ab88cefa8bf0bc21d698ce9cdf8f20cf80a596247378c";
-    const workerUrl = "https://text2llmgroq.text2team.workers.dev/"; // đổi thành URL Worker của bạn
+    const WORKER_URL = "https://cloudflare-llm.text2team.workers.dev"; // 🔥 Đổi thành URL Worker thật của bạn
+
+    let isRequesting = false;
 
     // Character and word counter
     input.addEventListener("input", () => {
@@ -385,7 +387,22 @@
       }
     });
 
+    // typing effect ✨
+    function typeOut(el, text) {
+      el.textContent = "";
+      let i = 0;
+      const step = () => {
+        if (i < text.length) {
+          el.textContent += text[i++];
+          setTimeout(step, 10 + Math.random() * 20);
+        }
+      };
+      step();
+    }
+
     btn.addEventListener("click", async () => {
+      if (isRequesting) return;
+      
       const userText = input.value.trim();
       if (!userText) {
         showNotification("Please enter text to correct!", "warning");
@@ -394,43 +411,52 @@
 
       const fullPrompt = "Correct spelling errors in the following English text. Only return the corrected text, no explanations: " + userText;
 
+      isRequesting = true;
+      btn.disabled = true;
       loading.classList.remove("hidden");
       resultContainer.classList.add("hidden");
       placeholder.classList.add("hidden");
       output.textContent = "";
 
       try {
-        const response = await fetch(workerUrl, {
+        const response = await fetch(WORKER_URL, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            message: fullPrompt
+            prompt: fullPrompt
           })
         });
 
         if (!response.ok) {
-          throw new Error("API connection error");
+          const errText = await response.text();
+          throw new Error(`Server lỗi (${response.status}): ${errText}`);
         }
 
         const data = await response.json();
-        let resultText = data?.choices?.[0]?.message?.content || "Could not process text. Please try again!";
+
+        // 👉 Worker trả về dạng { reply: { response: "..." } }
+        let resultText = data?.reply?.response || data?.reply || "Không có phản hồi từ AI 😢";
 
         // Remove content within <think></think> tags
         resultText = resultText.replace(/<think>.*?<\/think>/gs, '');
 
-        output.textContent = resultText;
         resultContainer.classList.remove("hidden");
         copyBtn.classList.remove("hidden");
+        
+        // Hiệu ứng gõ từng chữ
+        typeOut(output, resultText);
 
       } catch (error) {
         console.error("Error:", error);
-        output.textContent = "An error occurred while processing the text. Please try again!";
+        output.textContent = "🚨 Lỗi: " + error.message;
         resultContainer.classList.remove("hidden");
         copyBtn.classList.remove("hidden");
       } finally {
         loading.classList.add("hidden");
+        isRequesting = false;
+        btn.disabled = false;
       }
     });
 
